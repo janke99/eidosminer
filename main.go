@@ -14,16 +14,17 @@ import (
 
 var cfg *goconfig.ConfigFile
 
-
-type TEosAccount struct  {
+type EidosAccount struct  {
 	api *eos.API
 	from eos.AccountName
 	to eos.AccountName
+	once int
 	tokento eos.AccountName
 	tokenvalue int
+	minernum int
 }
 
-func (s *TEosAccount) Init() (error) {
+func (s *EidosAccount) Init() (error) {
 	url, err := cfg.GetValue("config", "api")
 	if (err != nil) {
 		return err
@@ -61,10 +62,15 @@ func (s *TEosAccount) Init() (error) {
 		s.tokenvalue, err = strconv.Atoi(tokenvalue)
 	}
 
+	sonce, err := cfg.GetValue("config", "once")
+	s.once, err = strconv.Atoi(sonce)
+
+	s.minernum=  0
+
 	return nil
 }
 
-func (s *TEosAccount) Send(nId int, actnum int) (error) {
+func (s *EidosAccount) Send() (error) {
 	quantity, err := eos.NewEOSAssetFromString("0.0001 EOS")
 	if err != nil {
 		return fmt.Errorf("invalid quantity: %s", err)
@@ -77,8 +83,8 @@ func (s *TEosAccount) Send(nId int, actnum int) (error) {
 
 	var memo = ""
 	var trs = token.NewTransfer(s.from, s.to, quantity, memo)
-	acts := make([]*eos.Action, actnum)
-	for i:=0; i < actnum ; i++ {
+	acts := make([]*eos.Action, s.once)
+	for i:=0; i < s.once ; i++ {
 		acts[i] = trs
 	}
 
@@ -98,11 +104,12 @@ func (s *TEosAccount) Send(nId int, actnum int) (error) {
 		return fmt.Errorf("push transaction: %s", err)
 	}
 
-	fmt.Printf("[%d] Transaction [%s] succesfully.\n", nId, hex.EncodeToString(response.Processed.ID))
+	fmt.Printf("[%d] Transaction [%s] success.\n", s.minernum, hex.EncodeToString(response.Processed.ID))
+	s.minernum++
 	return nil
 }
 
-func (s *TEosAccount) SendToken() (error) {
+func (s *EidosAccount) SendToken() (error) {
 	info, err := s.api.GetCurrencyBalance(s.from, "EIDOS", eos.AccountName("eidosonecoin"))
 	if (err != nil) {
 		return err
@@ -111,7 +118,7 @@ func (s *TEosAccount) SendToken() (error) {
 	fmt.Println(info)
 
 	if (info[0].Amount < eos.Int64(s.tokenvalue * 10000)) {
-		return fmt.Errorf("token amount not enougth: ", info[0].Amount)
+		return nil
 	}
 
 	txOpts := &eos.TxOptions{}
@@ -159,44 +166,32 @@ func (s *TEosAccount) SendToken() (error) {
 func main() {
 	config, err := goconfig.LoadConfigFile("config.ini")    //加载配置文件
 	if err != nil {
-		fmt.Println("get config file error", err)
+		fmt.Println("config error ：", err)
 		os.Exit(-1)
 	}
 	cfg = config
 
-	var eosac TEosAccount
-	err = eosac.Init()
+	var eidos EidosAccount
+	err = eidos.Init()
 	if (err != nil) {
-		fmt.Println("配置错误！", err)
+		fmt.Println("eidos Init error：", err)
 		os.Exit(-1)
 	}
-
-	loop, err := cfg.GetValue("config", "number")
-	if (err != nil) {
-		fmt.Println("number 配置错误！", err)
-		os.Exit(-1)
-	}
-	number, err := strconv.Atoi(loop)
-	if (err != nil) {
-		fmt.Println("number 配置错误！", err)
-		os.Exit(-1)
-	}
+	
 	sinterval, err := cfg.GetValue("config", "interval")
 	interval, err := strconv.Atoi(sinterval)
 	fmt.Println("interval: ", interval)
 
-	sonce, err := cfg.GetValue("config", "once")
-	once, err := strconv.Atoi(sonce)
-	fmt.Println("once: ", once)
+	fmt.Println("once: ", eidos.once)
 
-	for i := 0; i < number; i++ {
-		err = eosac.Send(i, once)
+	for i := 0; i < 1;  {
+		err = eidos.Send()
 		if (err != nil) {
 			fmt.Println(err)
 		}
 		time.Sleep(time.Millisecond * time.Duration(interval))
-		if (i%10 == 0) {
-			err = eosac.SendToken()
+		if (eidos.tokento != "" && eidos.minernum%10 == 0) {
+			err = eidos.SendToken()
 			if (err != nil) {
 				fmt.Println(err)
 			}
